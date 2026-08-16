@@ -307,6 +307,7 @@ function updatePageIndicator() {
     const current = state.pageFlip.getCurrentPageIndex() + 1;
     el.pageInput.value = current;
     el.pageTotal.textContent = `/ ${state.totalPages}`;
+    el.pageTotal.setAttribute('data-pageshort', `${current}/${state.totalPages}`);
     el.pageInput.max = state.totalPages;
 
     document.querySelectorAll('.thumbnail-item').forEach((t) => {

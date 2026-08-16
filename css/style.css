@@ -464,8 +464,81 @@ body {
 .app:-webkit-full-screen { background: var(--bg); }
 
 /* ===== Responsive ===== */
+
+/* Tablet */
+@media (max-width: 1024px) {
+    .toolbar { padding: 0 8px; gap: 8px; }
+    .doc-title { max-width: 120px; font-size: 13px; }
+    .sidebar { width: 240px; }
+}
+
+/* Mobile */
 @media (max-width: 700px) {
-    .toolbar-center { display: none; }
+    :root { --toolbar-h: 50px; }
+
+    .toolbar {
+        padding: 0 6px;
+        gap: 4px;
+    }
+
+    .toolbar-left { flex: 0 0 auto; }
+    .toolbar-right { flex: 1; }
+    .toolbar-center {
+        flex: 0 0 auto;
+        order: 3;
+    }
+
     .doc-title { display: none; }
-    .sidebar { width: 160px; }
+    .toolbar-divider { display: none; }
+
+    .tool-btn { width: 32px; height: 32px; }
+    .tool-btn svg { width: 18px; height: 18px; }
+
+    .page-input { width: 40px; font-size: 13px; padding: 3px; }
+    .page-indicator { font-size: 12px; gap: 4px; }
+    .page-indicator span { display: none; }
+    .page-indicator::after {
+        content: attr(data-pageshort);
+        color: var(--text-muted);
+        font-size: 12px;
+    }
+
+    .zoom-level { display: none; }
+
+    .sidebar {
+        width: 100%;
+        max-width: 280px;
+    }
+
+    .sidebar-tab { font-size: 12px; padding: 10px 6px; }
+
+    .drop-zone-content {
+        padding: 32px 20px;
+        margin: 16px;
+    }
+    .drop-zone-content h1 { font-size: 22px; }
+    .drop-zone-content p { font-size: 14px; }
+    .drop-icon { width: 48px; height: 48px; margin-bottom: 16px; }
+    .btn-primary { padding: 10px 22px; font-size: 14px; }
+
+    .flipbook-container {
+        padding: 0;
+    }
+
+    .outline-item { font-size: 12px; padding: 6px 10px; }
+    .outline-page { font-size: 10px; }
+}
+
+/* Small mobile */
+@media (max-width: 380px) {
+    .toolbar-center { display: none; }
+    .tool-btn { width: 28px; height: 28px; }
+    .tool-btn svg { width: 16px; height: 16px; }
+}
+
+/* Touch devices */
+@media (hover: none) and (pointer: coarse) {
+    .tool-btn:hover { background: transparent; }
+    .thumbnail-item:hover { border-color: transparent; }
+    .outline-item:hover { background: transparent; border-left-color: transparent; }
 }
