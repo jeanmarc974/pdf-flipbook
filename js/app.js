@@ -2,7 +2,7 @@ import { PageFlip } from 'https://cdn.jsdelivr.net/npm/page-flip@0.3.0/dist/js/p
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-const RENDER_SCALE = 1.2;
+const RENDER_SCALE = 1.5;
 const MAX_PAGES = 500;
 
 const state = {
@@ -14,7 +14,6 @@ const state = {
     fileName: 'Document',
     totalPages: 0,
     outline: [],
-    pageSize: { targetW: 400, renderHeight: 565 },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -54,13 +53,38 @@ const el = {
     progressPercent: $('progress-percent'),
 };
 
-function showLoading(text = 'Chargement du PDF…') {
+function showBoot(title, subtitle) {
+    el.bootTitle.textContent = title;
+    el.bootSubtitle.textContent = subtitle;
+    el.bootScreen.classList.remove('hidden');
+    el.progressBar.style.width = '0%';
+    el.progressPercent.textContent = '0%';
+}
+
+function hideBoot() {
+    el.bootScreen.classList.add('hidden');
+}
+
+function updateBootProgress(pct, title, subtitle) {
+    el.progressBar.style.width = pct + '%';
+    el.progressPercent.textContent = pct + '%';
+    if (title) el.bootTitle.textContent = title;
+    if (subtitle) el.bootSubtitle.textContent = subtitle;
+}
+
+function showLoading(text = 'Chargement…') {
     el.loadingText.textContent = text;
     el.loadingOverlay.classList.remove('hidden');
 }
 
 function hideLoading() {
     el.loadingOverlay.classList.add('hidden');
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' o';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' Ko';
+    return (bytes / 1048576).toFixed(1) + ' Mo';
 }
 
 function initDropZone() {
@@ -121,13 +145,14 @@ async function loadPDF(source) {
                 updateBootProgress(pct, 'Téléchargement du PDF', `${formatBytes(received)} / ${formatBytes(contentLength)}`);
             }
 
-            arrayBuffer = new Uint8Array(chunks.reduce((acc, c) => acc + c.length, 0));
+            const totalSize = chunks.reduce((acc, c) => acc + c.length, 0);
+            const uint8 = new Uint8Array(totalSize);
             let offset = 0;
             for (const chunk of chunks) {
-                arrayBuffer.set(chunk, offset);
+                uint8.set(chunk, offset);
                 offset += chunk.length;
             }
-            arrayBuffer = arrayBuffer.buffer;
+            arrayBuffer = uint8.buffer;
         } else {
             arrayBuffer = await response.arrayBuffer();
         }
@@ -151,7 +176,6 @@ async function loadPDF(source) {
             console.warn(`PDF has ${state.pdfDoc.numPages} pages, only first ${MAX_PAGES} will be loaded.`);
         }
 
-        showBoot('Rendu des pages', `0 / ${state.totalPages} pages…`);
         await renderAllPages();
         await loadOutline();
 
@@ -169,72 +193,37 @@ async function loadPDF(source) {
     }
 }
 
-function showBoot(title, subtitle) {
-    el.bootTitle.textContent = title;
-    el.bootSubtitle.textContent = subtitle;
-    el.bootScreen.classList.remove('hidden');
-    updateBootProgress(0);
-}
-
-function hideBoot() {
-    el.bootScreen.classList.add('hidden');
-}
-
-function updateBootProgress(pct, title, subtitle) {
-    el.progressBar.style.width = pct + '%';
-    el.progressPercent.textContent = pct + '%';
-    if (title) el.bootTitle.textContent = title;
-    if (subtitle) el.bootSubtitle.textContent = subtitle;
-}
-
-function formatBytes(bytes) {
-    if (bytes < 1024) return bytes + ' o';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' Ko';
-    return (bytes / 1048576).toFixed(1) + ' Mo';
-}
-
-async function getPageSize() {
-    const containerW = el.flipbookContainer.clientWidth || 800;
+async function renderAllPages() {
+    state.pageImages = [];
+    const containerW = el.flipbookContainer.clientWidth;
     const targetW = Math.min(500, Math.max(300, containerW / 2 - 40));
     const page = await state.pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
     const aspectRatio = viewport.height / viewport.width;
     const renderHeight = Math.round(targetW * aspectRatio);
-    page.cleanup();
-    return { targetW, renderHeight };
-}
-
-async function renderPage(pageNum) {
-    const pdfPage = await state.pdfDoc.getPage(pageNum);
-    const vp = pdfPage.getViewport({ scale: RENDER_SCALE });
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = vp.width;
-    canvas.height = vp.height;
-    await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
-
-    const links = await extractLinks(pdfPage, vp);
-    pdfPage.cleanup();
-
-    const { targetW, renderHeight } = state.pageSize;
-    return {
-        dataUrl: canvas.toDataURL('image/jpeg', 0.75),
-        width: targetW,
-        height: renderHeight,
-        links: links,
-    };
-}
-
-async function renderAllPages() {
-    state.pageImages = [];
-    state.pageSize = await getPageSize();
 
     for (let i = 1; i <= state.totalPages; i++) {
         const pct = Math.round((i / state.totalPages) * 100);
-        showBoot('Rendu des pages', `${i} / ${state.totalPages} pages…`);
+        showBoot('Affichage du flipbook en cours', `${i} / ${state.totalPages} pages…`);
         updateBootProgress(pct);
-        const pageData = await renderPage(i);
-        state.pageImages.push(pageData);
+
+        const pdfPage = await state.pdfDoc.getPage(i);
+        const vp = pdfPage.getViewport({ scale: RENDER_SCALE });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
+
+        const links = await extractLinks(pdfPage, vp);
+
+        state.pageImages.push({
+            dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+            width: targetW,
+            height: renderHeight,
+            links: links,
+        });
+        pdfPage.cleanup();
     }
 }
 
@@ -422,8 +411,7 @@ function buildThumbnails() {
         const div = document.createElement('div');
         div.className = 'thumbnail-item';
         div.dataset.page = i + 1;
-        const imgSrc = p.dataUrl || '';
-        div.innerHTML = `<img src="${imgSrc}" alt="Page ${i + 1}"><span class="thumb-num">${i + 1}</span>`;
+        div.innerHTML = `<img src="${p.dataUrl}" alt="Page ${i + 1}"><span class="thumb-num">${i + 1}</span>`;
         div.addEventListener('click', () => {
             state.pageFlip.turnToPage(i);
             updatePageIndicator();
