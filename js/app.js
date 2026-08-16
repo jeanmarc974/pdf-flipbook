@@ -4,7 +4,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dis
 
 const RENDER_SCALE = 1.2;
 const MAX_PAGES = 500;
-const INITIAL_RENDER_COUNT = 4;
 
 const state = {
     pdfDoc: null,
@@ -152,8 +151,8 @@ async function loadPDF(source) {
             console.warn(`PDF has ${state.pdfDoc.numPages} pages, only first ${MAX_PAGES} will be loaded.`);
         }
 
-        showBoot('Rendu des pages', `0 / ${Math.min(INITIAL_RENDER_COUNT, state.totalPages)} pages…`);
-        await renderPagesProgressive();
+        showBoot('Rendu des pages', `0 / ${state.totalPages} pages…`);
+        await renderAllPages();
         await loadOutline();
 
         hideBoot();
@@ -163,7 +162,6 @@ async function loadPDF(source) {
         await initFlipbook();
         buildThumbnails();
         updatePageIndicator();
-        renderRemainingPages();
     } catch (err) {
         hideBoot();
         console.error(err);
@@ -224,81 +222,19 @@ async function renderPage(pageNum) {
         width: targetW,
         height: renderHeight,
         links: links,
-        rendered: true,
     };
 }
 
-async function renderPagesProgressive() {
+async function renderAllPages() {
     state.pageImages = [];
     state.pageSize = await getPageSize();
 
-    const initialCount = Math.min(INITIAL_RENDER_COUNT, state.totalPages);
-
-    for (let i = 1; i <= initialCount; i++) {
-        showBoot('Rendu des pages', `${i} / ${initialCount} pages…`);
-        const pct = Math.round((i / initialCount) * 100);
+    for (let i = 1; i <= state.totalPages; i++) {
+        const pct = Math.round((i / state.totalPages) * 100);
+        showBoot('Rendu des pages', `${i} / ${state.totalPages} pages…`);
         updateBootProgress(pct);
         const pageData = await renderPage(i);
         state.pageImages.push(pageData);
-    }
-
-    for (let i = initialCount + 1; i <= state.totalPages; i++) {
-        state.pageImages.push({
-            dataUrl: null,
-            width: state.pageSize.targetW,
-            height: state.pageSize.renderHeight,
-            links: [],
-            rendered: false,
-        });
-    }
-}
-
-async function renderRemainingPages() {
-    for (let i = 0; i < state.pageImages.length; i++) {
-        if (state.pageImages[i].rendered) continue;
-
-        const pageNum = i + 1;
-        try {
-            const pageData = await renderPage(pageNum);
-            state.pageImages[i] = pageData;
-
-            const pageEl = el.flipbook.querySelector(`.page[data-page="${pageNum}"] img`);
-            if (pageEl) {
-                pageEl.src = pageData.dataUrl;
-            }
-
-            const pageContainer = el.flipbook.querySelector(`.page[data-page="${pageNum}"]`);
-            if (pageContainer) {
-                pageContainer.classList.remove('page-placeholder');
-
-                if (pageData.links && pageData.links.length > 0) {
-                    const existingLinks = pageContainer.querySelectorAll('.page-link');
-                    if (existingLinks.length === 0) {
-                        const linksHTML = buildLinksHTML(pageData.links, pageNum);
-                        pageContainer.insertAdjacentHTML('beforeend', linksHTML);
-                        pageContainer.querySelectorAll('.page-link-internal').forEach((a) => {
-                            a.addEventListener('click', (e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const dest = parseInt(a.dataset.dest);
-                                if (dest && state.pageFlip) {
-                                    state.pageFlip.turnToPage(dest - 1);
-                                }
-                            });
-                        });
-                    }
-                }
-            }
-
-            const thumbEl = el.thumbnailsList.querySelector(`.thumbnail-item[data-page="${pageNum}"] img`);
-            if (thumbEl) {
-                thumbEl.src = pageData.dataUrl;
-            }
-
-            await new Promise(r => setTimeout(r, 0));
-        } catch (err) {
-            console.error(`Failed to render page ${pageNum}:`, err);
-        }
     }
 }
 
@@ -393,10 +329,8 @@ async function initFlipbook() {
 
     const pagesHTML = state.pageImages.map((p, i) => {
         const linksHTML = buildLinksHTML(p.links, i + 1);
-        const imgSrc = p.dataUrl || '';
-        const placeholderClass = p.rendered ? '' : 'page-placeholder';
-        return `<div class="page ${placeholderClass}" data-page="${i + 1}">
-            <img src="${imgSrc}" alt="Page ${i + 1}">
+        return `<div class="page" data-page="${i + 1}">
+            <img src="${p.dataUrl}" alt="Page ${i + 1}">
             ${linksHTML}
             <span class="page-number">${i + 1}</span>
         </div>`;
@@ -697,12 +631,6 @@ function toggleFullscreen() {
 }
 
 async function exportHTML() {
-    const unrendered = state.pageImages.filter(p => !p.rendered).length;
-    if (unrendered > 0) {
-        showLoading(`Finalisation du rendu… (${state.totalPages - unrendered}/${state.totalPages})`);
-        await renderRemainingPages();
-    }
-
     showLoading('Génération du fichier HTML…');
 
     try {
