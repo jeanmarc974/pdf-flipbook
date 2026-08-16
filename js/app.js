@@ -364,15 +364,32 @@ function escapeAttr(str) {
 }
 
 function attachLinkHandlers() {
-    el.flipbook.querySelectorAll('.page-link-internal').forEach((a) => {
+    el.flipbook.querySelectorAll('.page-link').forEach((a) => {
         a.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const dest = parseInt(a.dataset.dest);
-            if (dest && state.pageFlip) {
-                state.pageFlip.turnToPage(dest - 1);
+            if (a.classList.contains('page-link-internal')) {
+                const dest = parseInt(a.dataset.dest);
+                if (dest && state.pageFlip) {
+                    state.pageFlip.turnToPage(dest - 1);
+                }
+            } else if (a.href && a.target === '_blank') {
+                window.open(a.href, '_blank', 'noopener,noreferrer');
             }
         });
+
+        a.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (a.classList.contains('page-link-internal')) {
+                const dest = parseInt(a.dataset.dest);
+                if (dest && state.pageFlip) {
+                    state.pageFlip.turnToPage(dest - 1);
+                }
+            } else if (a.href && a.target === '_blank') {
+                window.open(a.href, '_blank', 'noopener,noreferrer');
+            }
+        }, { passive: false });
     });
 }
 
