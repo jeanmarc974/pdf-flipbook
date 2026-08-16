@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Flipbook — Générateur de livre animé</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+</head>
+<body>
+
+    <div id="drop-zone" class="drop-zone">
+        <div class="drop-zone-content">
+            <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <h1>PDF Flipbook</h1>
+            <p>Déposez un fichier PDF ici<br>ou cliquez pour parcourir</p>
+            <button id="browse-btn" class="btn-primary">Choisir un PDF</button>
+            <input type="file" id="file-input" accept="application/pdf" hidden>
+        </div>
+    </div>
+
+    <div id="app" class="app hidden">
+
+        <header class="toolbar">
+            <div class="toolbar-left">
+                <button id="btn-new" class="tool-btn" title="Nouveau PDF">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+                </button>
+                <span id="doc-title" class="doc-title">Document</span>
+            </div>
+
+            <div class="toolbar-center">
+                <button id="btn-prev" class="tool-btn" title="Page précédente">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="page-indicator">
+                    <input type="number" id="page-input" min="1" value="1" class="page-input">
+                    <span id="page-total">/ 0</span>
+                </div>
+                <button id="btn-next" class="tool-btn" title="Page suivante">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </div>
+
+            <div class="toolbar-right">
+                <button id="btn-zoom-out" class="tool-btn" title="Dézoomer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-4.35-4.35M11 8H7M11 11H7M11 14H7" stroke-linecap="round"/><circle cx="11" cy="11" r="6"/></svg>
+                </button>
+                <span id="zoom-level" class="zoom-level">100%</span>
+                <button id="btn-zoom-in" class="tool-btn" title="Zoomer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-4.35-4.35M11 8v6M8 11h6" stroke-linecap="round"/><circle cx="11" cy="11" r="6"/></svg>
+                </button>
+                <div class="toolbar-divider"></div>
+                <button id="btn-thumbnails" class="tool-btn" title="Sommaire / Miniatures">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </button>
+                <button id="btn-fullscreen" class="tool-btn" title="Plein écran">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button id="btn-export" class="tool-btn" title="Exporter en HTML">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M12 15l-4-4M12 15l4-4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div id="loading-overlay" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p id="loading-text">Chargement du PDF…</p>
+        </div>
+
+        <main id="main-area" class="main-area">
+            <div id="flipbook-container" class="flipbook-container">
+                <div id="flipbook" class="flipbook"></div>
+            </div>
+        </main>
+
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-tabs">
+                    <button id="tab-thumbnails" class="sidebar-tab active">Miniatures</button>
+                    <button id="tab-outline" class="sidebar-tab">Sommaire</button>
+                </div>
+                <button id="btn-close-sidebar" class="tool-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M6 18L18 6" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div id="thumbnails-list" class="thumbnails-list sidebar-panel active"></div>
+            <div id="outline-list" class="outline-list sidebar-panel"></div>
+        </aside>
+
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
