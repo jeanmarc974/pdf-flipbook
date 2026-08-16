@@ -45,6 +45,7 @@ const el = {
     outlineList: $('outline-list'),
     tabThumbnails: $('tab-thumbnails'),
     tabOutline: $('tab-outline'),
+    dropText: $('drop-text'),
 };
 
 function showLoading(text = 'Chargement du PDF…') {
@@ -90,14 +91,27 @@ function initDropZone() {
     });
 }
 
-async function loadPDF(file) {
-    state.fileName = file.name.replace(/\.pdf$/i, '');
+async function loadPDF(source) {
+    let arrayBuffer;
+    let fileName;
+
+    if (typeof source === 'string') {
+        showLoading('Téléchargement du PDF…');
+        const response = await fetch(source);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        arrayBuffer = await response.arrayBuffer();
+        fileName = source.split('/').pop().split('?')[0];
+    } else {
+        fileName = source.name;
+        arrayBuffer = await source.arrayBuffer();
+    }
+
+    state.fileName = fileName.replace(/\.pdf$/i, '');
     el.docTitle.textContent = state.fileName;
 
     showLoading('Lecture du PDF…');
 
     try {
-        const arrayBuffer = await file.arrayBuffer();
         state.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         state.totalPages = Math.min(state.pdfDoc.numPages, MAX_PAGES);
 
@@ -650,9 +664,27 @@ document.addEventListener('keydown', (e) => {
 </html>`;
 }
 
+const DEFAULT_PDF = 'document.pdf';
+const URL_PARAM = 'pdf';
+
 function init() {
     initDropZone();
     initControls();
+
+    const params = new URLSearchParams(window.location.search);
+    const pdfParam = params.get(URL_PARAM);
+
+    if (pdfParam) {
+        loadPDF(pdfParam).catch(err => {
+            console.error(err);
+            el.dropText.innerHTML = 'Impossible de charger le PDF depuis l\'URL.<br>Déposez un fichier PDF ici ou cliquez pour parcourir.';
+        });
+    } else {
+        loadPDF(DEFAULT_PDF).catch(err => {
+            console.warn('No default PDF found:', err.message);
+            el.dropText.innerHTML = 'Aucun PDF par défaut trouvé.<br>Déposez un fichier PDF ici ou cliquez pour parcourir.';
+        });
+    }
 }
 
 init();
