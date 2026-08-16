@@ -48,6 +48,11 @@ const el = {
     tabThumbnails: $('tab-thumbnails'),
     tabOutline: $('tab-outline'),
     dropText: $('drop-text'),
+    bootScreen: $('boot-screen'),
+    bootTitle: $('boot-title'),
+    bootSubtitle: $('boot-subtitle'),
+    progressBar: $('progress-bar'),
+    progressPercent: $('progress-percent'),
 };
 
 function showLoading(text = 'Chargement du PDF…') {
@@ -98,10 +103,35 @@ async function loadPDF(source) {
     let fileName;
 
     if (typeof source === 'string') {
-        showLoading('Téléchargement du PDF…');
+        showBoot('Téléchargement du PDF', 'Récupération du document…');
         const response = await fetch(source);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        arrayBuffer = await response.arrayBuffer();
+
+        const contentLength = parseInt(response.headers.get('content-length') || '0');
+        if (contentLength > 0) {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let received = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                const pct = Math.round((received / contentLength) * 100);
+                updateBootProgress(pct, 'Téléchargement du PDF', `${formatBytes(received)} / ${formatBytes(contentLength)}`);
+            }
+
+            arrayBuffer = new Uint8Array(chunks.reduce((acc, c) => acc + c.length, 0));
+            let offset = 0;
+            for (const chunk of chunks) {
+                arrayBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            arrayBuffer = arrayBuffer.buffer;
+        } else {
+            arrayBuffer = await response.arrayBuffer();
+        }
         fileName = source.split('/').pop().split('?')[0];
     } else {
         fileName = source.name;
@@ -111,7 +141,8 @@ async function loadPDF(source) {
     state.fileName = fileName.replace(/\.pdf$/i, '');
     el.docTitle.textContent = state.fileName;
 
-    showLoading('Lecture du PDF…');
+    showBoot('Analyse du PDF', 'Lecture des pages…');
+    updateBootProgress(0);
 
     try {
         state.pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -121,10 +152,11 @@ async function loadPDF(source) {
             console.warn(`PDF has ${state.pdfDoc.numPages} pages, only first ${MAX_PAGES} will be loaded.`);
         }
 
+        showBoot('Rendu des pages', `0 / ${Math.min(INITIAL_RENDER_COUNT, state.totalPages)} pages…`);
         await renderPagesProgressive();
         await loadOutline();
-        hideLoading();
 
+        hideBoot();
         el.dropZone.classList.add('hidden');
         el.app.classList.remove('hidden');
 
@@ -133,10 +165,34 @@ async function loadPDF(source) {
         updatePageIndicator();
         renderRemainingPages();
     } catch (err) {
-        hideLoading();
+        hideBoot();
         console.error(err);
         alert('Erreur lors du chargement du PDF : ' + err.message);
     }
+}
+
+function showBoot(title, subtitle) {
+    el.bootTitle.textContent = title;
+    el.bootSubtitle.textContent = subtitle;
+    el.bootScreen.classList.remove('hidden');
+    updateBootProgress(0);
+}
+
+function hideBoot() {
+    el.bootScreen.classList.add('hidden');
+}
+
+function updateBootProgress(pct, title, subtitle) {
+    el.progressBar.style.width = pct + '%';
+    el.progressPercent.textContent = pct + '%';
+    if (title) el.bootTitle.textContent = title;
+    if (subtitle) el.bootSubtitle.textContent = subtitle;
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' o';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' Ko';
+    return (bytes / 1048576).toFixed(1) + ' Mo';
 }
 
 async function getPageSize() {
@@ -179,7 +235,9 @@ async function renderPagesProgressive() {
     const initialCount = Math.min(INITIAL_RENDER_COUNT, state.totalPages);
 
     for (let i = 1; i <= initialCount; i++) {
-        showLoading(`Rendu initial… ${i}/${initialCount}`);
+        showBoot('Rendu des pages', `${i} / ${initialCount} pages…`);
+        const pct = Math.round((i / initialCount) * 100);
+        updateBootProgress(pct);
         const pageData = await renderPage(i);
         state.pageImages.push(pageData);
     }
@@ -739,11 +797,15 @@ function init() {
     if (pdfParam) {
         loadPDF(pdfParam).catch(err => {
             console.error(err);
+            hideBoot();
+            el.dropZone.classList.remove('hidden');
             el.dropText.innerHTML = 'Impossible de charger le PDF depuis l\'URL.<br>Déposez un fichier PDF ici ou cliquez pour parcourir.';
         });
     } else {
         loadPDF(DEFAULT_PDF).catch(err => {
             console.warn('No default PDF found:', err.message);
+            hideBoot();
+            el.dropZone.classList.remove('hidden');
             el.dropText.innerHTML = 'Aucun PDF par défaut trouvé.<br>Déposez un fichier PDF ici ou cliquez pour parcourir.';
         });
     }
