@@ -2,8 +2,9 @@ import { PageFlip } from 'https://cdn.jsdelivr.net/npm/page-flip@0.3.0/dist/js/p
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-const RENDER_SCALE = 1.5;
+const RENDER_SCALE = 1.2;
 const MAX_PAGES = 500;
+const INITIAL_RENDER_COUNT = 4;
 
 const state = {
     pdfDoc: null,
@@ -14,6 +15,7 @@ const state = {
     fileName: 'Document',
     totalPages: 0,
     outline: [],
+    pageSize: { targetW: 400, renderHeight: 565 },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -119,7 +121,7 @@ async function loadPDF(source) {
             console.warn(`PDF has ${state.pdfDoc.numPages} pages, only first ${MAX_PAGES} will be loaded.`);
         }
 
-        await renderAllPages();
+        await renderPagesProgressive();
         await loadOutline();
         hideLoading();
 
@@ -129,6 +131,7 @@ async function loadPDF(source) {
         await initFlipbook();
         buildThumbnails();
         updatePageIndicator();
+        renderRemainingPages();
     } catch (err) {
         hideLoading();
         console.error(err);
@@ -136,34 +139,85 @@ async function loadPDF(source) {
     }
 }
 
-async function renderAllPages() {
-    state.pageImages = [];
-    const containerW = el.flipbookContainer.clientWidth;
+async function getPageSize() {
+    const containerW = el.flipbookContainer.clientWidth || 800;
     const targetW = Math.min(500, Math.max(300, containerW / 2 - 40));
     const page = await state.pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
     const aspectRatio = viewport.height / viewport.width;
     const renderHeight = Math.round(targetW * aspectRatio);
+    page.cleanup();
+    return { targetW, renderHeight };
+}
 
-    for (let i = 1; i <= state.totalPages; i++) {
-        showLoading(`Rendu des pages… ${i}/${state.totalPages}`);
-        const pdfPage = await state.pdfDoc.getPage(i);
-        const vp = pdfPage.getViewport({ scale: RENDER_SCALE });
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = vp.width;
-        canvas.height = vp.height;
-        await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
+async function renderPage(pageNum) {
+    const pdfPage = await state.pdfDoc.getPage(pageNum);
+    const vp = pdfPage.getViewport({ scale: RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
 
-        const links = await extractLinks(pdfPage, vp);
+    const links = await extractLinks(pdfPage, vp);
+    pdfPage.cleanup();
 
+    const { targetW, renderHeight } = state.pageSize;
+    return {
+        dataUrl: canvas.toDataURL('image/jpeg', 0.75),
+        width: targetW,
+        height: renderHeight,
+        links: links,
+        rendered: true,
+    };
+}
+
+async function renderPagesProgressive() {
+    state.pageImages = [];
+    state.pageSize = await getPageSize();
+
+    const initialCount = Math.min(INITIAL_RENDER_COUNT, state.totalPages);
+
+    for (let i = 1; i <= initialCount; i++) {
+        showLoading(`Rendu initial… ${i}/${initialCount}`);
+        const pageData = await renderPage(i);
+        state.pageImages.push(pageData);
+    }
+
+    for (let i = initialCount + 1; i <= state.totalPages; i++) {
         state.pageImages.push({
-            dataUrl: canvas.toDataURL('image/jpeg', 0.82),
-            width: targetW,
-            height: renderHeight,
-            links: links,
+            dataUrl: null,
+            width: state.pageSize.targetW,
+            height: state.pageSize.renderHeight,
+            links: [],
+            rendered: false,
         });
-        pdfPage.cleanup();
+    }
+}
+
+async function renderRemainingPages() {
+    for (let i = 0; i < state.pageImages.length; i++) {
+        if (state.pageImages[i].rendered) continue;
+
+        const pageNum = i + 1;
+        try {
+            const pageData = await renderPage(pageNum);
+            state.pageImages[i] = pageData;
+
+            const pageEl = el.flipbook.querySelector(`.page[data-page="${pageNum}"] img`);
+            if (pageEl && !pageEl.src) {
+                pageEl.src = pageData.dataUrl;
+            }
+
+            const thumbEl = el.thumbnailsList.querySelector(`.thumbnail-item[data-page="${pageNum}"] img`);
+            if (thumbEl && !thumbEl.src) {
+                thumbEl.src = pageData.dataUrl;
+            }
+
+            await new Promise(r => setTimeout(r, 0));
+        } catch (err) {
+            console.error(`Failed to render page ${pageNum}:`, err);
+        }
     }
 }
 
@@ -258,8 +312,10 @@ async function initFlipbook() {
 
     const pagesHTML = state.pageImages.map((p, i) => {
         const linksHTML = buildLinksHTML(p.links, i + 1);
-        return `<div class="page" data-page="${i + 1}">
-            <img src="${p.dataUrl}" alt="Page ${i + 1}">
+        const imgSrc = p.dataUrl || '';
+        const placeholderClass = p.rendered ? '' : 'page-placeholder';
+        return `<div class="page ${placeholderClass}" data-page="${i + 1}">
+            <img src="${imgSrc}" alt="Page ${i + 1}">
             ${linksHTML}
             <span class="page-number">${i + 1}</span>
         </div>`;
@@ -351,7 +407,8 @@ function buildThumbnails() {
         const div = document.createElement('div');
         div.className = 'thumbnail-item';
         div.dataset.page = i + 1;
-        div.innerHTML = `<img src="${p.dataUrl}" alt="Page ${i + 1}"><span class="thumb-num">${i + 1}</span>`;
+        const imgSrc = p.dataUrl || '';
+        div.innerHTML = `<img src="${imgSrc}" alt="Page ${i + 1}"><span class="thumb-num">${i + 1}</span>`;
         div.addEventListener('click', () => {
             state.pageFlip.turnToPage(i);
             updatePageIndicator();
@@ -559,10 +616,15 @@ function toggleFullscreen() {
 }
 
 async function exportHTML() {
+    const unrendered = state.pageImages.filter(p => !p.rendered).length;
+    if (unrendered > 0) {
+        showLoading(`Finalisation du rendu… (${state.totalPages - unrendered}/${state.totalPages})`);
+        await renderRemainingPages();
+    }
+
     showLoading('Génération du fichier HTML…');
 
     try {
-        const imagesData = state.pageImages.map(p => p.dataUrl);
         const firstPage = state.pageImages[0];
         const w = firstPage.width;
         const h = firstPage.height;
