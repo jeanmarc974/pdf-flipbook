@@ -263,12 +263,35 @@ async function renderRemainingPages() {
             state.pageImages[i] = pageData;
 
             const pageEl = el.flipbook.querySelector(`.page[data-page="${pageNum}"] img`);
-            if (pageEl && !pageEl.src) {
+            if (pageEl) {
                 pageEl.src = pageData.dataUrl;
             }
 
+            const pageContainer = el.flipbook.querySelector(`.page[data-page="${pageNum}"]`);
+            if (pageContainer) {
+                pageContainer.classList.remove('page-placeholder');
+
+                if (pageData.links && pageData.links.length > 0) {
+                    const existingLinks = pageContainer.querySelectorAll('.page-link');
+                    if (existingLinks.length === 0) {
+                        const linksHTML = buildLinksHTML(pageData.links, pageNum);
+                        pageContainer.insertAdjacentHTML('beforeend', linksHTML);
+                        pageContainer.querySelectorAll('.page-link-internal').forEach((a) => {
+                            a.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const dest = parseInt(a.dataset.dest);
+                                if (dest && state.pageFlip) {
+                                    state.pageFlip.turnToPage(dest - 1);
+                                }
+                            });
+                        });
+                    }
+                }
+            }
+
             const thumbEl = el.thumbnailsList.querySelector(`.thumbnail-item[data-page="${pageNum}"] img`);
-            if (thumbEl && !thumbEl.src) {
+            if (thumbEl) {
                 thumbEl.src = pageData.dataUrl;
             }
 
